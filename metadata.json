@@ -1,0 +1,5 @@
+{
+  "name": "Kalvium's Attendance Marking Tool",
+  "description": "Track daily attendance for Kalvium campus mentors using a drag-and-drop interface.",
+  "requestFramePermissions": []
+}
