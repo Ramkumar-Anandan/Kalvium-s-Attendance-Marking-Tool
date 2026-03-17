@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Upload, Download, Users, MapPin, CheckSquare, Undo2 } from 'lucide-react';
+import { Upload, Download, Users, MapPin, CheckSquare, Undo2, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Member, AttendanceStatus, STATUSES } from './types';
 import { parseCSV, exportCSV } from './utils/csv';
@@ -14,7 +14,12 @@ export default function App() {
   const [members, setMembers] = useState<Member[]>([]);
   const [history, setHistory] = useState<Member[][]>([]);
   const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
+  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setSelectedMembers(new Set());
+  }, [selectedCampus]);
 
   const campuses = useMemo(() => {
     const uniqueCampuses = Array.from(new Set(members.map((m) => m.campus)));
@@ -74,6 +79,33 @@ export default function App() {
     const previousState = history[history.length - 1];
     setMembers(previousState);
     setHistory((prev) => prev.slice(0, -1));
+  };
+
+  const toggleMemberSelection = (memberId: string) => {
+    setSelectedMembers((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(memberId)) {
+        newSet.delete(memberId);
+      } else {
+        newSet.add(memberId);
+      }
+      return newSet;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedMembers(new Set());
+  };
+
+  const moveSelectedMembers = (status: AttendanceStatus) => {
+    if (selectedMembers.size === 0) return;
+    setHistory((prev) => [...prev, members]);
+    setMembers((prev) =>
+      prev.map((m) =>
+        selectedMembers.has(m.id) ? { ...m, status } : m
+      )
+    );
+    clearSelection();
   };
 
   const handleDragStart = (e: React.DragEvent, memberId: string) => {
@@ -278,6 +310,8 @@ export default function App() {
                         member={member}
                         onDragStart={handleDragStart}
                         colorClass={getStatusColor('Unassigned')}
+                        isSelected={selectedMembers.has(member.id)}
+                        onToggleSelect={toggleMemberSelection}
                       />
                     ))}
                   </AnimatePresence>
@@ -313,6 +347,8 @@ export default function App() {
                             onDragStart={handleDragStart}
                             colorClass={getStatusColor(status)}
                             fullWidth
+                            isSelected={selectedMembers.has(member.id)}
+                            onToggleSelect={toggleMemberSelection}
                           />
                         ))}
                       </AnimatePresence>
@@ -329,6 +365,51 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Bulk Action Bar */}
+      <AnimatePresence>
+        {selectedMembers.size > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white shadow-2xl rounded-2xl border border-slate-200 p-4 flex items-center gap-4 z-50"
+          >
+            <div className="flex items-center gap-2 px-2">
+              <div className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+                {selectedMembers.size}
+              </div>
+              <span className="text-sm font-medium text-slate-700">selected</span>
+            </div>
+            
+            <div className="w-px h-8 bg-slate-200" />
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500 mr-2">Move to:</span>
+              <select 
+                className="text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 py-1.5"
+                onChange={(e) => moveSelectedMembers(e.target.value as AttendanceStatus)}
+                value=""
+              >
+                <option value="" disabled>Select status...</option>
+                {STATUSES.map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-px h-8 bg-slate-200" />
+            
+            <button 
+              onClick={clearSelection}
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Clear selection"
+            >
+              <X size={20} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -338,13 +419,17 @@ interface MemberBubbleProps {
   onDragStart: (e: React.DragEvent, id: string) => void;
   colorClass: string;
   fullWidth?: boolean;
+  isSelected: boolean;
+  onToggleSelect: (id: string) => void;
 }
 
 const MemberBubble: React.FC<MemberBubbleProps> = ({ 
   member, 
   onDragStart, 
   colorClass,
-  fullWidth = false 
+  fullWidth = false,
+  isSelected,
+  onToggleSelect
 }) => {
   return (
     <motion.div
@@ -356,12 +441,24 @@ const MemberBubble: React.FC<MemberBubbleProps> = ({
       draggable
       onDragStart={(e: any) => onDragStart(e, member.id)}
       className={cn(
-        "cursor-grab active:cursor-grabbing border rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow bg-white",
+        "relative cursor-grab active:cursor-grabbing border rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow bg-white group",
         fullWidth ? "w-full" : "w-auto min-w-[180px]",
-        colorClass.replace('bg-', 'border-').replace('100', '300') // Use the color class for border
+        colorClass.replace('bg-', 'border-').replace('100', '300'),
+        isSelected && "ring-2 ring-indigo-500 border-transparent shadow-md"
       )}
     >
-      <div className="font-medium text-sm text-slate-900 truncate">{member.name}</div>
+      <div className="absolute top-2 right-2 z-10">
+        <input 
+          type="checkbox" 
+          checked={isSelected}
+          onChange={() => onToggleSelect(member.id)}
+          className={cn(
+            "w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer transition-opacity",
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
+        />
+      </div>
+      <div className="font-medium text-sm text-slate-900 truncate pr-6">{member.name}</div>
       <div className="text-xs text-slate-500 truncate mt-0.5">{member.designation}</div>
     </motion.div>
   );
